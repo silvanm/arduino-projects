@@ -1,3 +1,10 @@
+/**
+ * Receiver for the door sensor. 
+ * 
+ * Author: Silvan Mühlemann, based on Basic Beacon by Daniel Berenguer
+ */
+#define SERIAL 1
+ 
 #ifdef SERIAL
 #include "HardwareSerial.h"
 #endif
@@ -8,7 +15,7 @@
 #define SOURCE_ADDR      4       // Sender address
 #define DESTINATION_ADDR 5       // Receiver address
 
-#define PHOTORESISTOR A5
+#define PHOTORESISTOR A4
 #define GREENLED      18
 #define REDLED        19
 
@@ -20,8 +27,8 @@
 #define LOCKUNKNOWN   2
 
 
-long lastPacketReceived = 0;
-long buttonPressTimer = 0;
+unsigned long lastPacketReceived = 0;  
+long buttonPressTimer = 0;  
 int currentState = LOCKUNKNOWN;
 CCPACKET txPacket;  // packet object
 byte count = 0;
@@ -44,12 +51,13 @@ void rfPacketReceived(CCPACKET *packet)
   {
     currentState = packet->data[0];
   }
-  lastPacketReceived = millis();
 
   // Send a confirmation
   //sendpacket.length = 1;
   //sendpacket.data[0] = 1;
   //panstamp.radio.sendData(sendpacket);
+
+  lastPacketReceived = millis();
 
   displayCurrentState();
 }
@@ -111,6 +119,8 @@ void setup()
 
   pinMode(BUTTON, INPUT);
 
+  lastPacketReceived = millis();
+
 #ifdef SERIAL
   Serial.begin(9600);
 #endif
@@ -129,7 +139,6 @@ void setup()
 
   buttonPressTimer = millis();
 
-  isNight = (analogRead(PHOTORESISTOR) < 30);
 }
 
 void displayCurrentState()
@@ -138,8 +147,14 @@ void displayCurrentState()
   if ((millis() > (buttonPressTimer + 20000)) && isNight) {
     fadeOut(GREENLED);
     fadeOut(REDLED);
+    digitalWrite(LED, LOW);
   } else {
     digitalWrite(LED, packetReceiveToggler);
+
+#ifdef SERIAL
+    Serial.println("displayCurrentState");
+    Serial.println(currentState);
+#endif
 
     if (currentState == LOCKCLOSED) {
       fadeOut(GREENLED);
@@ -148,7 +163,7 @@ void displayCurrentState()
       fadeIn(GREENLED);
       fadeOut(REDLED);
     } else {
-      fadeOut(GREENLED);
+      fadeIn(GREENLED);
       fadeIn(REDLED);
     }
   }
@@ -158,21 +173,11 @@ void loop()
 {
   digitalWrite(YELLOWLED, LOW);
 
-  txPacket.length = 2;  // Let's send a single data byte plus the destination address
+  //txPacket.length = 2;  // Let's send a single data byte plus the destination address
 
-  txPacket.data[0] = DESTINATION_ADDR;   // First data byte has to be the destination address
-  txPacket.data[1] = count++;            // Self-incrementing value
-  panstamp.radio.sendData(txPacket);     // Transmit packet
-
-  // This does not work for some reason...
-  if ((millis() - lastPacketReceived) > (1 * 60 * 1000)) {
-    // turn both leds off to show a warning
-    digitalWrite(GREENLED, HIGH);
-    digitalWrite(REDLED, HIGH);
-#ifdef SERIAL
-    Serial.println("Receive timeout");
-#endif
-  }
+  //txPacket.data[0] = DESTINATION_ADDR;   // First data byte has to be the destination address
+  //txPacket.data[1] = count++;            // Self-incrementing value
+  //panstamp.radio.sendData(txPacket);     // Transmit packet
 
   if (digitalRead(BUTTON) == HIGH) {
     buttonPressTimer = millis();
@@ -182,11 +187,20 @@ void loop()
 #endif
   }
 
-  photoResistorValue = analogRead(PHOTORESISTOR);
+  
+  if ((millis() - lastPacketReceived) > 500000) {
+    currentState = LOCKUNKNOWN;
+#ifdef SERIAL
+    Serial.println("No data");
+#endif
+  }
 
+  photoResistorValue = analogRead(PHOTORESISTOR);
+  // override
+  //photoResistorValue = 300;
   if (photoResistorValue != 65535) {
 
-    if (!isNight && (photoResistorValue < 2)) {
+    if (!isNight && (photoResistorValue < 5)) {
       buttonPressTimer = millis();
       isNight = true;
       digitalWrite(YELLOWLED, HIGH);
@@ -195,7 +209,7 @@ void loop()
 #endif
     }
 
-    if (isNight && (photoResistorValue > 4)) {
+    if (isNight && (photoResistorValue > 10)) {
       isNight = false;
       digitalWrite(YELLOWLED, HIGH);
 #ifdef SERIAL
@@ -205,6 +219,7 @@ void loop()
 
 #ifdef SERIAL
     Serial.println(photoResistorValue);
+    Serial.println(millis() - lastPacketReceived);
 #endif
 
   }
